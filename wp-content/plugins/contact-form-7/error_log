@@ -1,4 +1,0 @@
-[04-Nov-2026 13:52:44 America/Chicago] PHP Fatal error:  Uncaught Error: Call to undefined function plugin_basename() in /home1/pchtadmi/public_html/wp-content/plugins/contact-form-7/wp-contact-form-7.php:23
-Stack trace:
-#0 {main}
-  thrown in /home1/pchtadmi/public_html/wp-content/plugins/contact-form-7/wp-contact-form-7.php on line 23

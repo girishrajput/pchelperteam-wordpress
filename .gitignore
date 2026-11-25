@@ -66,6 +66,8 @@
 /wp-content/wflogs/
 /wp-content/debug.log
 *.log
+error_log
+*/error_log
 
 # ------------------------------------------------------------------------------
 # 6. OS & IDE System Files
