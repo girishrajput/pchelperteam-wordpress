@@ -1,0 +1,624 @@
+<?php
+
+/**
+ * The file that defines the core plugin class
+ *
+ * A class definition that includes attributes and functions used across both the
+ * public-facing side of the site and the admin area.
+ *
+ * @link       http://ljapps.com
+ * @since      1.0.0
+ *
+ * @package    WP_Yelp_Review
+ * @subpackage WP_Yelp_Review/includes
+ */
+
+/**
+ * The core plugin class.
+ *
+ * This is used to define internationalization, admin-specific hooks, and
+ * public-facing site hooks.
+ *
+ * Also maintains the unique identifier of this plugin as well as the current
+ * version of the plugin.
+ *
+ * @since      1.0.0
+ * @package    WP_Yelp_Review
+ * @subpackage WP_Yelp_Review/includes
+ * @author     Josh <landjllc@gmail.com>
+ */
+class WP_Yelp_Review {
+
+	/**
+	 * The loader that's responsible for maintaining and registering all hooks that power
+	 * the plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   protected
+	 * @var      WP_Yelp_Review_Loader    $loader    Maintains and registers all hooks for the plugin.
+	 */
+	protected $loader;
+
+	/**
+	 * The unique identifier of this plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   protected
+	 * @var      string    $plugintoken    The string used to uniquely identify this plugin.
+	 */
+	protected $plugintoken;
+	protected $_token;
+
+	/**
+	 * The current version of the plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   protected
+	 * @var      string    $version    The current version of the plugin.
+	 */
+	protected $version;
+
+	/**
+	 * Define the core functionality of the plugin.
+	 *
+	 * Set the plugin name and the plugin version that can be used throughout the plugin.
+	 * Load the dependencies, define the locale, and set the hooks for the admin area and
+	 * the public-facing side of the site.
+	 *
+	 * @since    1.0.0
+	 */
+	public function __construct() {
+
+		$this->_token = 'wp-yelp-review-slider';
+		$this->version = '9.6';
+		//using this for development
+		//$this->version = time();
+
+		$this->load_dependencies();
+		$this->set_locale();
+		
+		if (is_admin()) {
+			$this->define_admin_hooks();
+			//update db if not at latest
+			$this->_updatedb_version_number();
+		}
+		$this->define_public_hooks();
+		$this->define_block_hooks();
+		//save version number to db
+		$this->_log_version_number();
+
+	}
+	
+	
+		/**
+	 * Update DB if not at latest
+	 * @access  public
+	 * @since   1.0.0
+	 * @return  void
+	 */
+	private function _updatedb_version_number () {
+		$current_version = get_option($this->_token . '_current_db_version', 0);
+		
+		if($current_version!=$this->version){
+			
+					//create table in database
+		global $wpdb;
+		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+
+		$table_name = $wpdb->prefix . 'wpyelp_reviews';
+		
+		// Create new tables as utf8mb4 so emoji in review text can be stored.
+		$has_utf8mb4 = $wpdb->get_var( "SHOW CHARACTER SET LIKE 'utf8mb4'" ) !== null;
+		if ( $has_utf8mb4 ) {
+			$charset_collate = 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
+		} else {
+			$charset_collate = $wpdb->get_charset_collate();
+		}
+
+		$sql = "CREATE TABLE $table_name (
+				id mediumint(9) NOT NULL AUTO_INCREMENT,
+				pageid varchar(150) DEFAULT '' NOT NULL,
+				pagename tinytext NOT NULL,
+				created_time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+				created_time_stamp int(12) NOT NULL,
+				reviewer_name tinytext NOT NULL,
+				reviewer_email tinytext NOT NULL,
+				company_name varchar(100) DEFAULT '' NOT NULL,
+				company_title varchar(100) DEFAULT '' NOT NULL,
+				company_url varchar(100) DEFAULT '' NOT NULL,
+				reviewer_id varchar(50) DEFAULT '' NOT NULL,
+				rating varchar(3) NOT NULL,
+				recommendation_type varchar(12) DEFAULT '' NOT NULL,
+				review_text text NOT NULL,
+				hide varchar(3) DEFAULT '' NOT NULL,
+				review_length int(5) NOT NULL,
+				review_length_char int(5) NOT NULL,
+				type varchar(20) DEFAULT '' NOT NULL,
+				userpic varchar(500) DEFAULT '' NOT NULL,
+				userpic_small varchar(500) DEFAULT '' NOT NULL,
+				from_name varchar(20) DEFAULT '' NOT NULL,
+				from_url varchar(800) DEFAULT '' NOT NULL,
+				from_logo varchar(500) DEFAULT '' NOT NULL,
+				from_url_review varchar(800) DEFAULT '' NOT NULL,
+				review_title varchar(500) DEFAULT '' NOT NULL,
+				categories text NOT NULL,
+				posts text NOT NULL,
+				consent varchar(3) DEFAULT '' NOT NULL,
+				userpiclocal varchar(500) DEFAULT '' NOT NULL,
+				hidestars varchar(3) DEFAULT '' NOT NULL,
+				miscpic varchar(500) DEFAULT '' NOT NULL,
+				location varchar(500) DEFAULT '' NOT NULL,
+				verified_order varchar(10) DEFAULT '' NOT NULL,
+				language_code varchar(10) DEFAULT '' NOT NULL,
+				unique_id tinytext DEFAULT '' NOT NULL,
+				meta_data text DEFAULT '' NOT NULL,
+				custom_data text DEFAULT '' NOT NULL,
+				custom_stars text DEFAULT '' NOT NULL,
+				owner_response text NOT NULL,
+				sort_weight int(5) NOT NULL,
+				tags text NOT NULL,
+				mediaurlsarrayjson text NOT NULL,
+				mediathumburlsarrayjson text NOT NULL,
+				reviewfunnel varchar(3) DEFAULT '' NOT NULL,
+				UNIQUE KEY id (id),
+				PRIMARY KEY (id)
+			) $charset_collate;";
+		dbDelta( $sql );
+
+		// Convert a legacy 3-byte reviews table to utf8mb4 so emoji can be stored.
+		self::wpyelp_maybe_convert_table_to_utf8mb4( $this->version );
+		
+		//create template posts table in dbDelta 
+		$table_name = $wpdb->prefix . 'wpyelp_post_templates';
+		
+		$sql_template = "CREATE TABLE $table_name (
+				id mediumint(9) NOT NULL AUTO_INCREMENT,
+				title varchar(200) DEFAULT '' NOT NULL,
+				template_type varchar(7) DEFAULT '' NOT NULL,
+				style int(2) NOT NULL,
+				created_time_stamp int(12) NOT NULL,
+				display_num int(2) NOT NULL,
+				display_num_rows int(3) NOT NULL,
+				load_more varchar(3) DEFAULT '' NOT NULL,
+				load_more_text varchar(50) DEFAULT '' NOT NULL,
+				display_order varchar(10) DEFAULT '' NOT NULL,
+				display_order_second varchar(10) DEFAULT '' NOT NULL,
+				hide_no_text varchar(3) DEFAULT '' NOT NULL,
+				template_css text NOT NULL,
+				min_rating int(2) NOT NULL,
+				min_words int(4) NOT NULL,
+				max_words int(4) NOT NULL,
+				word_or_char varchar(5) DEFAULT '' NOT NULL,
+				rtype varchar(200) DEFAULT '' NOT NULL,
+				rpage varchar(1000) DEFAULT '' NOT NULL,
+				createslider varchar(3) DEFAULT '' NOT NULL,
+				numslides int(2) NOT NULL,
+				sliderautoplay varchar(3) DEFAULT '' NOT NULL,
+				sliderdirection varchar(12) DEFAULT '' NOT NULL,
+				sliderarrows varchar(3) DEFAULT '' NOT NULL,
+				sliderdots varchar(3) DEFAULT '' NOT NULL,
+				sliderdelay int(2) NOT NULL,
+				sliderspeed int(5) NOT NULL,
+				sliderheight varchar(3) DEFAULT '' NOT NULL,
+				slidermobileview varchar(5) DEFAULT '' NOT NULL,
+				showreviewsbyid varchar(600) DEFAULT '' NOT NULL,
+				template_misc text DEFAULT '' NOT NULL,
+				read_more varchar(3) DEFAULT '' NOT NULL,
+				read_more_num int(4) NOT NULL,
+				read_more_text varchar(20) DEFAULT '' NOT NULL,
+				facebook_icon varchar(3) DEFAULT '' NOT NULL,
+				facebook_icon_link varchar(3) DEFAULT '' NOT NULL,
+				google_snippet_add varchar(3) DEFAULT '' NOT NULL,
+				google_snippet_type varchar(50) DEFAULT '' NOT NULL,
+				google_snippet_name varchar(500) DEFAULT '' NOT NULL,
+				google_snippet_desc varchar(1000) DEFAULT '' NOT NULL,
+				google_snippet_business_image varchar(500) DEFAULT '' NOT NULL,
+				google_snippet_more text DEFAULT '' NOT NULL,
+				cache_settings varchar(5) DEFAULT '' NOT NULL,
+				review_same_height varchar(3) DEFAULT '' NOT NULL,
+				add_profile_link varchar(3) DEFAULT '' NOT NULL,
+				display_order_limit varchar(3) DEFAULT '' NOT NULL,
+				display_masonry varchar(3) DEFAULT '' NOT NULL,
+				read_less_text varchar(20) DEFAULT '' NOT NULL,
+				string_sel varchar(3) DEFAULT '' NOT NULL,
+				string_selnot varchar(3) DEFAULT '' NOT NULL,
+				string_text varchar(300) DEFAULT '' NOT NULL,
+				string_textnot varchar(300) DEFAULT '' NOT NULL,
+				showreviewsbyid_sel varchar(9) DEFAULT '' NOT NULL,
+				UNIQUE KEY id (id),
+				PRIMARY KEY (id)
+			) $charset_collate;";
+		
+		dbDelta( $sql_template );
+
+		//create totals/averages table used for badge averages
+		$table_name_totalavg = $wpdb->prefix . 'wpyelp_total_averages';
+		$sql_totalavg = "CREATE TABLE $table_name_totalavg (
+				btp_id varchar(150) DEFAULT '' NOT NULL,
+				btp_name varchar(150) DEFAULT '' NOT NULL,
+				btp_type varchar(10) DEFAULT '' NOT NULL,
+				pagetype varchar(100) DEFAULT '' NOT NULL,
+				pagetypedetails text NOT NULL,
+				total_indb varchar(10) DEFAULT '' NOT NULL,
+				total varchar(10) DEFAULT '' NOT NULL,
+				avg_indb varchar(10) DEFAULT '' NOT NULL,
+				avg varchar(10) DEFAULT '' NOT NULL,
+				numr1 varchar(10) DEFAULT '' NOT NULL,
+				numr2 varchar(10) DEFAULT '' NOT NULL,
+				numr3 varchar(10) DEFAULT '' NOT NULL,
+				numr4 varchar(10) DEFAULT '' NOT NULL,
+				numr5 varchar(10) DEFAULT '' NOT NULL,
+				UNIQUE KEY id (btp_id),
+				PRIMARY KEY (btp_id)
+			) $charset_collate;";
+		dbDelta( $sql_totalavg );
+
+		}
+		
+		update_option( $this->_token . '_current_db_version', $this->version );
+		
+	}
+	
+	
+	
+	
+	/**
+	 * Log the plugin version number.
+	 * @access  public
+	 * @since   1.0.0
+	 * @return  void
+	 */
+	private function _log_version_number () {
+		update_option( $this->_token . '_version', $this->version );
+	} // End _log_version_number ()
+
+	/**
+	 * Load the required dependencies for this plugin.
+	 *
+	 * Include the following files that make up the plugin:
+	 *
+	 * - WP_Yelp_Review_Loader. Orchestrates the hooks of the plugin.
+	 * - WP_Yelp_Review_i18n. Defines internationalization functionality.
+	 * - WP_Yelp_Review_Admin. Defines all hooks for the admin area.
+	 * - WP_Yelp_Review_Public. Defines all hooks for the public side of the site.
+	 *
+	 * Create an instance of the loader which will be used to register the hooks
+	 * with WordPress.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 */
+	private function load_dependencies() {
+
+		/**
+		 * The class responsible for orchestrating the actions and filters of the
+		 * core plugin.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-wp-yelp-review-slider-loader.php';
+
+		/**
+		 * The class responsible for defining internationalization functionality
+		 * of the plugin.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-wp-yelp-review-slider-i18n.php';
+
+		/**
+		 * Shared CSS / color sanitization helpers (badge + template colors).
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-wp-yelp-review-slider-sanitize.php';
+
+		/**
+		 * The class responsible for defining all actions that occur in the admin area.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-wp-yelp-review-slider-admin.php';
+
+		/**
+		 * Analytics AJAX handlers.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-wp-yelp-review-slider-analytics.php';
+
+		/**
+		 * Sample AI Analysis AJAX handlers (Pro teaser).
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-wp-yelp-review-slider-ai.php';
+		
+		/**
+		 * The class responsible for parsing yelp and tripadvisor pages
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/wpyelp_simple_html_dom.php';
+
+		/**
+		 * The class responsible for defining all actions that occur in the public-facing
+		 * side of the site.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-wp-yelp-review-slider-public.php';
+		
+		/**
+		 * The class responsible for the widget admin and public
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-wp-yelp-review-slider-widget.php';
+		
+		/**
+		 * The class responsible for displaying review template via do_action in template file
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-wp-yelp-review-slider-template_action.php';
+
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-wp-yelp-review-slider-block.php';
+
+		//register the loader
+		$this->loader = new WP_Yelp_Review_Loader();
+		
+
+	}
+
+	/**
+	 * Define the locale for this plugin for internationalization.
+	 *
+	 * Uses the WP_Yelp_Review_i18n class in order to set the domain and to register the hook
+	 * with WordPress.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 */
+	private function set_locale() {
+
+		$plugin_i18n = new WP_Yelp_Review_i18n();
+
+		$this->loader->add_action( 'plugins_loaded', $plugin_i18n, 'load_plugin_textdomain' );
+
+	}
+
+	/**
+	 * Register all of the hooks related to the admin area functionality
+	 * of the plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 */
+	private function define_admin_hooks() {
+
+		$plugin_admin = new WP_Yelp_Review_Admin( $this->get_token(), $this->get_version() );
+
+		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
+		
+		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
+
+		// register our wpyelp_settings_init to the admin_init action hook, add setting inputs
+		//$this->loader->add_action('admin_init', $plugin_admin, 'wpyelp_settings_init');
+		
+		// register our wpyelp_yelp_settings_init to the admin_init action hook, add setting inputs
+		$this->loader->add_action('admin_init', $plugin_admin, 'wpyelp_yelp_settings_init');
+
+		// First-visit Brevo email opt-in redirect
+		$this->loader->add_action( 'admin_init', $plugin_admin, 'wpyelp_maybe_redirect_optin' );
+
+		// Hide the opt-in item after WordPress has allowed the page.
+		$this->loader->add_action( 'admin_head', $plugin_admin, 'wpyelp_hide_optin_menu' );
+
+		//add menu page
+		$this->loader->add_action( 'admin_menu', $plugin_admin, 'add_menu_pages' );
+
+		$this->loader->add_filter( 'admin_footer_text', $plugin_admin, 'admin_footer_text', 1 );
+		$this->loader->add_action( 'wp_ajax_wpyelp_footer_rated', $plugin_admin, 'ajax_footer_rated' );
+		
+		//add ajax for adding feedback to table
+		$this->loader->add_action( 'wp_ajax_yelp_get_results', $plugin_admin, 'wpyelp_process_ajax' );
+
+		//add ajax for hiding and deleting reviews in table
+		$this->loader->add_action( 'wp_ajax_yelp_hide_review', $plugin_admin, 'wpyelp_hidereview_ajax' ); 
+
+		//add ajax for hiding and deleting reviews in table
+		$this->loader->add_action( 'wp_ajax_yelp_find_reviews', $plugin_admin, 'wpyelp_getreviews_ajax' ); 		
+
+		//add ajax for adding a Yelp source and downloading its reviews
+		$this->loader->add_action( 'wp_ajax_wpyelp_add_source', $plugin_admin, 'wpyelp_ajax_add_source' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_download_source', $plugin_admin, 'wpyelp_ajax_download_source' );
+
+		//add ajax for saving an edited review
+		$this->loader->add_action( 'wp_ajax_wpyelp_save_review', $plugin_admin, 'wpyelp_savereview_ajax' );
+
+		//add ajax for saving a template and rendering a live preview
+		$this->loader->add_action( 'wp_ajax_wpyelp_save_template', $plugin_admin, 'wpyelp_savetemplate_ajax' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_get_preview', $plugin_admin, 'wpyelp_previewtemplate_ajax' );
+		
+
+		//add download csv file function wpyelp_download_csv
+		$this->loader->add_action( 'plugins_loaded', $plugin_admin, 'wpyelp_download_csv' ); 
+		
+		//add select shortcode list to post edit page
+		//$this->loader->add_action( 'media_buttons', $plugin_admin, 'add_sc_select',11 ); 
+		//$this->loader->add_action( 'admin_head', $plugin_admin, 'button_js' ); 
+		
+		//replaces insert into post text on media uploader when uploading reviewer avatar
+		$this->loader->add_action( 'admin_init', $plugin_admin, 'wpyelp_media_text' );
+		
+		//add download csv file function wpyelp_download_csv
+		$this->loader->add_action( 'plugins_loaded', $plugin_admin, 'wpyelp_download_yelp' ); 
+		
+		//cron for refreshing yelp
+		$this->loader->add_action('wpyelp_daily_event', $plugin_admin, 'wpyelp_do_this_daily');
+		
+				//for displaying leave review admin notice
+		$this->loader->add_action( 'admin_notices', $plugin_admin, 'wprp_admin_notice__success' ); 
+		
+		//dashboard widget to show newest reviews
+		$this->loader->add_action( 'wp_dashboard_setup', $plugin_admin, 'wprevyelp_dashboard_widget' );
+
+		//add custom link to menu
+		$this->loader->add_action( 'admin_menu', $plugin_admin, 'wprev_yelp_add_external_link_admin_submenu' );
+		$this->loader->add_action( 'admin_head', $plugin_admin, 'wpse_66040_add_jquery' );
+
+		// Analytics page AJAX
+		$plugin_analytics = new WP_Yelp_Review_Analytics();
+		$this->loader->add_action( 'wp_ajax_wppro_get_overall_chart_data', $plugin_analytics, 'wppro_get_overall_chart_data' );
+		$this->loader->add_action( 'wp_ajax_wprevpro_analytics_volume', $plugin_analytics, 'wprevpro_ajax_analytics_volume' );
+		$this->loader->add_action( 'wp_ajax_wprevpro_analytics_platform', $plugin_analytics, 'wprevpro_ajax_analytics_platform' );
+		$this->loader->add_action( 'wp_ajax_wprevpro_analytics_platform_volume', $plugin_analytics, 'wprevpro_ajax_analytics_platform_volume' );
+		$this->loader->add_action( 'wp_ajax_wprevpro_analytics_rating_trends', $plugin_analytics, 'wprevpro_ajax_analytics_rating_trends' );
+
+		// Sample AI Analysis AJAX
+		$plugin_ai = new WP_Yelp_Review_AI();
+		$this->loader->add_action( 'wp_ajax_wpyelp_ai_get_latest_report', $plugin_ai, 'wprevpro_ai_get_latest_report_ajax' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_ai_get_report', $plugin_ai, 'wprevpro_ai_get_report_ajax' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_ai_list_reports', $plugin_ai, 'wprevpro_ai_list_reports_ajax' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_ai_filters_options', $plugin_ai, 'wprevpro_ai_filters_options_ajax' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_ai_delete_report', $plugin_ai, 'wprevpro_ai_delete_report_ajax' );
+		$this->loader->add_action( 'wp_ajax_wpyelp_ai_reviews_by_date', $plugin_ai, 'wprevpro_ai_reviews_by_date_ajax' );
+	}
+
+	/**
+	 * Register all of the hooks related to the public-facing functionality
+	 * of the plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 */
+
+	/**
+	 * Register the review template block.
+	 *
+	 * Runs on the front end as well as in wp-admin so the render callback is available.
+	 *
+	 * @since 9.6
+	 */
+	private function define_block_hooks() {
+		$block = new WP_Yelp_Review_Slider_Block();
+
+		$this->loader->add_action( 'init', $block, 'register_block' );
+		$this->loader->add_action( 'enqueue_block_editor_assets', $block, 'enqueue_editor_data' );
+		$this->loader->add_action( 'enqueue_block_assets', $block, 'enqueue_preview_assets' );
+	}
+
+	private function define_public_hooks() {
+
+		$plugin_public = new WP_Yelp_Review_Public( $this->get_token(), $this->get_version() );
+
+		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
+		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
+
+		//add shortcode shortcode_wpyelp_usetemplate
+		$plugin_public->shortcode_wpyelp_usetemplate();
+		
+		
+	}
+
+	/**
+	 * Run the loader to execute all of the hooks with WordPress.
+	 *
+	 * @since    1.0.0
+	 */
+	/**
+	 * Convert an existing 3-byte (utf8/utf8mb3) reviews table to utf8mb4 so emoji can be saved.
+	 *
+	 * dbDelta() never changes the charset of an existing table, so sites whose table was
+	 * created as utf8 reject inserts containing 4-byte characters such as emoji.
+	 * Skips tables with non-utf8 columns, very large tables, or sites whose database
+	 * connection is not utf8mb4. When a version is passed (plugin update path) the
+	 * conversion is attempted at most once per version; activation passes nothing so a
+	 * manual deactivate/reactivate always retries.
+	 *
+	 * @param string $version Optional. Current plugin version, used to limit attempts.
+	 * @return bool True if the table is utf8mb4 after this call.
+	 */
+	public static function wpyelp_maybe_convert_table_to_utf8mb4( $version = '' ) {
+		global $wpdb;
+
+		if ( 'utf8mb4' !== $wpdb->charset ) {
+			return false;
+		}
+
+		$table = $wpdb->prefix . 'wpyelp_reviews';
+
+		$suppress = $wpdb->suppress_errors();
+		$columns  = $wpdb->get_results( "SHOW FULL COLUMNS FROM `{$table}`" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->suppress_errors( $suppress );
+		$wpdb->last_error = '';
+
+		if ( empty( $columns ) ) {
+			return false;
+		}
+
+		$three_byte    = array( 'utf8', 'utf8mb3' );
+		$needs_convert = false;
+		foreach ( $columns as $column ) {
+			if ( empty( $column->Collation ) ) {
+				continue; // numeric / blob column
+			}
+			list( $charset ) = explode( '_', $column->Collation );
+			$charset = strtolower( $charset );
+			if ( 'utf8mb4' === $charset ) {
+				continue;
+			}
+			if ( ! in_array( $charset, $three_byte, true ) ) {
+				// latin1 or other: converting could scramble stored text.
+				return false;
+			}
+			$needs_convert = true;
+		}
+
+		if ( ! $needs_convert ) {
+			return true;
+		}
+
+		// Skip very large tables; the rebuild could outlast the request. Handle those manually.
+		$status = $wpdb->get_row( $wpdb->prepare( 'SHOW TABLE STATUS LIKE %s', $table ) );
+		if ( $status ) {
+			$bytes = (int) $status->Data_length + (int) $status->Index_length;
+			if ( $bytes > 256 * 1024 * 1024 ) {
+				return false;
+			}
+		}
+
+		// Only try once per plugin version so a killed request does not retry on every admin load.
+		if ( '' !== (string) $version ) {
+			if ( get_option( 'wpyelp_reviews_utf8mb4_attempted', '' ) === (string) $version ) {
+				return false;
+			}
+			update_option( 'wpyelp_reviews_utf8mb4_attempted', (string) $version, false );
+		}
+
+		$suppress = $wpdb->suppress_errors();
+		$result   = $wpdb->query( "ALTER TABLE `{$table}` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->suppress_errors( $suppress );
+		$wpdb->last_error = '';
+
+		return false !== $result;
+	}
+
+	public function run() {
+	
+		$this->loader->run();
+	}
+
+	/**
+	 * The name of the plugin used to uniquely identify it within the context of
+	 * WordPress and to define internationalization functionality.
+	 *
+	 * @since     1.0.0
+	 * @return    string    The name of the plugin.
+	 */
+	public function get_token() {
+		return $this->_token;
+	}
+
+	/**
+	 * The reference to the class that orchestrates the hooks with the plugin.
+	 *
+	 * @since     1.0.0
+	 * @return    WP_Yelp_Review_Loader    Orchestrates the hooks of the plugin.
+	 */
+	public function get_loader() {
+		return $this->loader;
+	}
+
+	/**
+	 * Retrieve the version number of the plugin.
+	 *
+	 * @since     1.0.0
+	 * @return    string    The version number of the plugin.
+	 */
+	public function get_version() {
+		return $this->version;
+	}
+
+}

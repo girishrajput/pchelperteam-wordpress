@@ -1,0 +1,1248 @@
+<?php
+defined('ABSPATH') or die('No script kiddies please!');
+$ti_command = isset($_REQUEST['command']) ? sanitize_text_field(wp_unslash($_REQUEST['command'])) : null;
+$ti_command_list = [
+'save-page',
+'delete-page',
+'save-style',
+'save-filter-stars',
+'save-set',
+'save-language',
+'save-dateformat',
+'save-nameformat',
+'save-top-rated-type',
+'save-top-rated-date',
+'save-options',
+'save-align',
+'save-fomo-icon',
+'save-fomo-color',
+'save-fomo-margin',
+'save-fomo-title',
+'save-fomo-text',
+'save-fomo-url',
+'save-fomo-day',
+'save-fomo-hide-count',
+'save-review-text-mode',
+'save-verified-by-trustindex',
+'save-amp-notice-hide',
+
+'review-manual-download',
+];
+if (!in_array($ti_command, $ti_command_list)) {
+$ti_command = null;
+}
+$widgetSettings = $pluginManagerInstance->getWidgetSettings();
+$ti_option_commands = [
+'save-filter-stars' => ['stars', 'stars'],
+'save-language' => ['lang', 'lang'],
+'save-dateformat' => ['dateformat', 'dateformat'],
+'save-nameformat' => ['nameformat', 'nameformat'],
+'save-top-rated-type' => ['type', 'top-rated-type'],
+'save-top-rated-date' => ['date', 'top-rated-date'],
+'save-align' => ['align', 'align'],
+'save-fomo-icon' => ['fomo-icon', 'fomo-icon'],
+'save-fomo-color' => ['fomo-color', 'fomo-color'],
+'save-fomo-margin' => ['fomo-margin', 'fomo-margin'],
+'save-fomo-title' => ['fomo-title', 'fomo-title'],
+'save-fomo-text' => ['fomo-text', 'fomo-text'],
+'save-fomo-url' => ['fomo-url', 'fomo-url'],
+'save-fomo-day' => ['fomo-day', 'fomo-day'],
+'save-fomo-hide-count' => ['fomo-hide-count', 'fomo-hide-count'],
+'save-review-text-mode' => ['review_text_mode', 'review-text-mode'],
+'save-verified-by-trustindex' => ['verified-by-trustindex', 'verified-by-trustindex'],
+];
+function trustindex_plugin_exit_on_error($result)
+{
+if (is_wp_error($result)) {
+echo wp_kses_post(TrustindexPlugin_yelp::get_alertbox('error', $result->get_error_message()));
+die;
+}
+}
+if ($ti_command === 'save-page') {
+check_admin_referer('ti-save-page');
+// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+$pageDetails = isset($_POST['page_details']) ? $pluginManagerInstance->sanitizePageDetails($pluginManagerInstance->decodePlaceData(wp_unslash($_POST['page_details']))) : null;
+$reviewDownload = isset($_POST['review_download']) ? sanitize_text_field(wp_unslash($_POST['review_download'])) : 0;
+$pageDetails = is_array($pageDetails) ? $pageDetails : [];
+if (!isset($pageDetails['request_id']) && isset($_REQUEST['review_request_id'])) {
+$pageDetails['request_id'] = sanitize_text_field(wp_unslash($_REQUEST['review_request_id']));
+}
+if (!isset($pageDetails['manual_download']) && isset($_REQUEST['manual_download'])) {
+$pageDetails['manual_download'] = (int)$_REQUEST['manual_download'];
+}
+$pluginManagerInstance->connectPage($pageDetails, $reviewDownload);
+header('Location: admin.php?page='.esc_attr($_page).'&tab=free-widget-configurator');
+exit;
+}
+else if ($ti_command === 'delete-page') {
+check_admin_referer('ti-delete-page');
+$widgetSettings->disconnect();
+header('Location: admin.php?page='.esc_attr($_page).'&tab=free-widget-configurator');
+exit;
+}
+else if ($ti_command === 'save-style') {
+check_admin_referer('ti-save-style');
+trustindex_plugin_exit_on_error($widgetSettings->selectLayout(isset($_REQUEST['style_id']) ? (int)$_REQUEST['style_id'] : 4));
+if (isset($_GET['style_id'])) {
+header('Location: admin.php?page='.esc_attr($_page).'&tab=free-widget-configurator');
+}
+exit;
+}
+else if ($ti_command === 'save-set') {
+check_admin_referer('ti-save-set');
+$setId = isset($_REQUEST['set_id']) ? sanitize_text_field(wp_unslash($_REQUEST['set_id'])) : 'light-background';
+trustindex_plugin_exit_on_error($widgetSettings->selectStyle($setId));
+if (isset($_GET['verified_by_trustindex'])) {
+$widgetSettings->saveOption('verified-by-trustindex', 1);
+}
+if (isset($_GET['set_id'])) {
+header('Location: admin.php?page='.esc_attr($_page).'&tab=free-widget-configurator');
+}
+exit;
+}
+else if ($ti_command === 'save-options') {
+check_admin_referer('ti-save-options');
+$widgetSettings->saveCheckboxOptions(array_map('sanitize_text_field', wp_unslash($_POST)));
+exit;
+}
+else if (isset($ti_option_commands[$ti_command])) {
+check_admin_referer('ti-'.$ti_command);
+list($ti_field, $ti_option) = $ti_option_commands[$ti_command];
+$value = isset($_POST[$ti_field]) ? sanitize_text_field(wp_unslash($_POST[$ti_field])) : '';
+if (in_array($ti_option, ['fomo-title', 'fomo-text'], true)) {
+$value = html_entity_decode($value);
+}
+$widgetSettings->saveOption($ti_option, $value);
+exit;
+}
+else if ($ti_command === 'save-amp-notice-hide') {
+check_admin_referer('ti-save-amp-notice-hide');
+update_option($pluginManagerInstance->get_option_name('amp-hidden-notification'), 1, false);
+exit;
+}
+
+else if ($ti_command === 'review-manual-download') {
+check_admin_referer('ti-download-reviews');
+$response = wp_remote_post('https://admin.trustindex.io/source/wordpressPageRequest', [
+'body' => [ 'id' => get_option($pluginManagerInstance->get_option_name('review-download-request-id')) ],
+'timeout' => '30',
+'redirection' => '5',
+'blocking' => true
+]);
+if (is_wp_error($response)) {
+$wp_query->set_404();
+status_header(404);
+}
+else {
+$json = json_decode(wp_remote_retrieve_body($response), true);
+if (isset($json['error']) && $json['error']) {
+update_option($pluginManagerInstance->get_option_name('review-download-inprogress'), 'error', false);
+}
+else if (isset($json['details'])) {
+$pluginManagerInstance->save_details($json['details']);
+$pluginManagerInstance->save_reviews(isset($json['reviews']) ? $json['reviews'] : []);
+delete_option($pluginManagerInstance->get_option_name('review-download-token'));
+delete_option($pluginManagerInstance->get_option_name('review-download-inprogress'));
+delete_option($pluginManagerInstance->get_option_name('review-manual-download'));
+update_option($pluginManagerInstance->get_option_name('download-timestamp'), time() + (86400 * 10), false);
+}
+else {
+$wp_query->set_404();
+status_header(404);
+}
+}
+exit;
+}
+if (isset($_GET['recreate'])) {
+check_admin_referer('ti-recreate');
+$pluginManagerInstance->uninstall();
+$pluginManagerInstance->activate();
+header('Location: admin.php?page='.esc_attr($_page).'&tab=free-widget-configurator');
+exit;
+}
+if (isset($_GET['setup_widget'])) {
+check_admin_referer('ti-setup-widget');
+$widgetSettings->completeSetup();
+header('Location: admin.php?page='.esc_attr($_page).'&tab=free-widget-configurator');
+}
+$reviews = $pluginManagerInstance->getReviews();
+$isReviewDownloadInProgress = $pluginManagerInstance->is_review_download_in_progress();
+$styleId = (int)$pluginManagerInstance->getWidgetOption('style-id', true);
+$scssSet = $pluginManagerInstance->getWidgetOption('scss-set', true);
+if (!$pluginManagerInstance->is_noreg_linked()) {
+$styleId = null;
+$scssSet = null;
+} else {
+$pageDetails = $pluginManagerInstance->getPageDetails();
+$isTopRatedBadge = $styleId ? $pluginManager::$widget_templates['templates'][$styleId]['is-top-rated-badge'] : false;
+if ($isTopRatedBadge) {
+$isTopRatedBadgeValid = isset($pageDetails['rating_score']) ? (float)$pageDetails['rating_score'] >= $pluginManager::$topRatedMinimumScore : false;
+}
+}
+wp_enqueue_style('trustindex-widget-preview-css', 'https://cdn.trustindex.io/assets/ti-preview-box.css', [], true);
+?>
+<?php
+$stepUrl = '?page='.esc_attr($_page).'&tab=free-widget-configurator&step=%step%';
+$stepList = [
+/* translators: %s: Yelp */
+sprintf(__('Connect %s', 'reviews-widgets-for-yelp'), 'Yelp'),
+__('Select Layout', 'reviews-widgets-for-yelp'),
+__('Select Style', 'reviews-widgets-for-yelp'),
+__('Set up widget', 'reviews-widgets-for-yelp'),
+__('Insert code', 'reviews-widgets-for-yelp')
+];
+$stepDone = $widgetSettings->getCompletedStep();
+$stepCurrent = isset($_GET['step']) ? (int)sanitize_text_field(wp_unslash($_GET['step'])) : 0;
+if ($stepCurrent === 3 && in_array($pluginManager::$widget_templates['templates'][$styleId]['type'], ['floating', 'fomo'])) {
+$stepCurrent = 4;
+}
+if (!$stepCurrent) {
+$stepCurrent = $stepDone + 1;
+} else if ($stepCurrent > ($stepDone + 1)) {
+$stepCurrent = $stepDone + 1;
+}
+include(plugin_dir_path(__FILE__) . '../include/step-list.php');
+?>
+<div class="ti-container<?php if ($stepCurrent < 5): ?> ti-narrow-page<?php endif; ?><?php if (5 === $stepCurrent): ?> ti-insert-code-page<?php endif; ?>">
+<?php if ($pluginManagerInstance->is_trustindex_connected()): ?>
+<div class="ti-notice ti-notice-warning">
+<p>
+<?php
+$advancedTab = '<a href="?page='.esc_attr($_page).'&tab=advanced#trustindex-admin">'.__('Advanced', 'reviews-widgets-for-yelp').'</a>';
+/* translators: %s: Advanced tab link */
+echo wp_kses_post(sprintf(__("You have connected your Trustindex account, so you can find premium functionality under the %s tab. You no longer need this tab unless you choose the limited but forever free mode.", 'reviews-widgets-for-yelp'), $advancedTab));
+?>
+</p>
+</div>
+<?php endif; ?>
+
+<?php if ($isReviewDownloadInProgress === 'error'): ?>
+<div class="ti-box ti-notice-error">
+<p>
+<?php echo wp_kses_post(__('While downloading the reviews, we noticed that your connected page is not found.<br />If it really exists, please contact us to resolve the issue or try connect it again.', 'reviews-widgets-for-yelp')); ?><br />
+</p>
+</div>
+<?php elseif ($isReviewDownloadInProgress): ?>
+<div class="ti-notice ti-notice-warning">
+<p>
+<?php echo esc_html(__('Your reviews are being downloaded.', 'reviews-widgets-for-yelp')) . ' ' . esc_html(__('This process should only take a few minutes.', 'reviews-widgets-for-yelp')); ?>
+<br />
+<?php echo esc_html(__('While you wait, you can start the widget setup with some review templates.', 'reviews-widgets-for-yelp')); ?>
+<?php if ($pluginManagerInstance->is_review_manual_download()): ?>
+<br />
+<a href="#" id="ti-review-manual-download" data-nonce="<?php echo esc_attr(wp_create_nonce('ti-download-reviews')); ?>" class="ti-btn ti-btn-sm ti-tooltip ti-toggle-tooltip" style="margin-top: 5px">
+<?php echo esc_html(__('Manual download', 'reviews-widgets-for-yelp')); ?>
+<span class="ti-tooltip-message">
+<?php echo esc_html(__('Your reviews are being downloaded.', 'reviews-widgets-for-yelp')) . ' ' . esc_html(__('This process should only take a few minutes.', 'reviews-widgets-for-yelp')); ?>
+</span>
+</a>
+<?php endif; ?>
+</p>
+</div>
+<?php endif; ?>
+<?php if ($pluginManager::is_amp_active() && !get_option($pluginManagerInstance->get_option_name('amp-hidden-notification'), 0)): ?>
+<div class="ti-notice ti-notice-warning is-dismissible">
+<p>
+<?php echo esc_html(__('Free plugin features are unavailable with AMP plugin.', 'reviews-widgets-for-yelp')); ?>
+<?php if ($pluginManagerInstance->is_trustindex_connected()): ?>
+ <a href="?page=<?php echo esc_attr($_page); ?>&tab=advanced">Trustindex admin</a>
+<?php else: ?>
+ <a href="https://www.trustindex.io/?a=sys&c=wp-amp" target="_blank"><?php echo esc_html(__('Try premium features (like AMP) for free', 'reviews-widgets-for-yelp')); ?></a>
+<?php endif; ?>
+</p>
+<button type="button" class="notice-dismiss" data-command="save-amp-notice-hide" data-nonce="<?php echo esc_attr(wp_create_nonce('ti-save-amp-notice-hide')); ?>"></button>
+</div>
+<?php endif; ?>
+<?php if ($stepCurrent === 1): ?>
+<h1 class="ti-header-title"><?php
+/* translators: %s: Yelp */
+echo esc_html(sprintf(__('Connect %s', 'reviews-widgets-for-yelp'), 'Yelp'));
+?></h1>
+<?php if ($pluginManagerInstance->is_noreg_linked()): ?>
+<div class="ti-source-box">
+<?php if (isset($pageDetails['avatar_url']) && $pageDetails['avatar_url']): ?>
+<img src="<?php echo esc_url($pageDetails['avatar_url']); ?>" />
+<?php endif; ?>
+<div class="ti-source-info">
+<?php if (isset($pageDetails['name']) && $pageDetails['name']): ?>
+<strong><?php echo esc_html($pageDetails['name']); ?></strong><br />
+<?php endif; ?>
+<?php if (isset($pageDetails['address']) && $pageDetails['address']): ?>
+<?php echo esc_html($pageDetails['address']); ?><br />
+<?php endif; ?>
+<a href="<?php echo esc_url($pluginManagerInstance->getPageUrl()); ?>" target="_blank"><?php echo esc_url($pluginManagerInstance->getPageUrl()); ?></a>
+</div>
+<a href="<?php echo esc_url(wp_nonce_url('?page='. esc_attr($_page) .'&tab=free-widget-configurator&command=delete-page', 'ti-delete-page')); ?>" class="ti-btn ti-btn-primary ti-btn-loading-on-click"><?php echo esc_html(__('Disconnect', 'reviews-widgets-for-yelp')); ?></a>
+</div>
+<?php else: ?>
+<div class="ti-box">
+<form method="post" action="" data-platform="yelp" id="ti-connect-platform-form">
+<?php wp_nonce_field('ti-save-page'); ?>
+<input type="hidden" name="command" value="save-page" />
+<input type="hidden" name="page_details" required="required" id="ti-noreg-page-details" value="" />
+<?php
+$reviewDownloadToken = get_option($pluginManagerInstance->get_option_name('review-download-token'));
+if (!$reviewDownloadToken) {
+$reviewDownloadToken = wp_create_nonce('ti-noreg-connect-token');
+update_option($pluginManagerInstance->get_option_name('review-download-token'), $reviewDownloadToken, false);
+}
+?>
+<input type="hidden" id="ti-noreg-connect-token" name="ti-noreg-connect-token" value="<?php echo esc_attr($reviewDownloadToken); ?>" />
+<input type="hidden" id="ti-noreg-webhook-url" value="<?php echo esc_url($pluginManagerInstance->getWebhookUrl()); ?>" />
+<input type="hidden" id="ti-noreg-email" value="<?php echo esc_attr(get_option('admin_email')); ?>" />
+<input type="hidden" id="ti-noreg-version" value="<?php echo esc_attr($pluginManagerInstance->getVersion()); ?>" />
+<input type="hidden" id="ti-noreg-review-download" name="review_download" value="0" />
+<input type="hidden" id="ti-noreg-review-request-id" name="review_request_id" value="" />
+<input type="hidden" id="ti-noreg-manual-download" name="manual_download" value=0 />
+<input type="hidden" id="ti-noreg-page-id" value="" />
+<div class="ti-notice ti-notice-info ti-d-none" id="ti-connect-info">
+<p><?php echo esc_html(__("A popup window should be appear! Please, go to there and continue the steps! (If there is no popup window, you can check the the browser's popup blocker)", 'reviews-widgets-for-yelp')); ?></p>
+</div>
+
+<?php
+
+$exampleUrl = 'https://www.yelp.ie/biz/the-iveagh-gardens-dublin-2';
+
+/* translators: %s: Yelp */
+$labelText = sprintf(__('%s Business URL', 'reviews-widgets-for-yelp'), 'Yelp');
+$infoText = __("Type your business/company's URL and select from the list", 'reviews-widgets-for-yelp');
+/* translators: %s: Yelp */
+$errorText = sprintf(__('Please add your URL again: this is not a valid %s page.', 'reviews-widgets-for-yelp'), "Yelp");
+$placeholder = __('e.g.:', 'reviews-widgets-for-yelp') . ' ' . esc_attr($exampleUrl);
+
+
+
+
+?>
+
+<div class="ti-notice ti-notice-error ti-d-none" id="ti-connect-error">
+<p><?php echo wp_kses_post($errorText); ?></p>
+</div>
+<div class="ti-connect-platform">
+<div class="ti-connect-platform-inner">
+<label><?php echo wp_kses_post($labelText); ?>:</label>
+<input class="ti-form-control" placeholder="<?php echo esc_attr($placeholder); ?>" type="text" />
+<a href="#" class="ti-btn"><?php echo esc_html(__('Check', 'reviews-widgets-for-yelp')); ?></a>
+</div>
+<span class="ti-info-text"><?php echo wp_kses_post($infoText); ?></span>
+</div>
+<div class="ti-source-box ti-d-none">
+<img />
+<div class="ti-source-info"></div>
+<a href="#" class="ti-btn btn-connect"><?php echo esc_html(__('Connect', 'reviews-widgets-for-yelp')); ?></a>
+</div>
+</form>
+</div>
+<?php endif; ?>
+<h1 class="ti-header-title ti-mt-2"><?php
+/* translators: %s: Yelp Business reviews */
+echo esc_html(sprintf(__('Check some %s widget layouts and styles', 'reviews-widgets-for-yelp'), 'Yelp Business reviews'));
+?></h1>
+<?php include(plugin_dir_path(__FILE__) . '../include/demo-widgets.php'); ?>
+<?php elseif ($stepCurrent === 2): ?>
+<h1 class="ti-header-title"><?php echo esc_html(__('Select Layout', 'reviews-widgets-for-yelp')); ?></h1>
+<?php if (!count($reviews) && !$isReviewDownloadInProgress): ?>
+<div class="ti-notice ti-notice-warning" style="margin: 0 0 15px 0">
+<p>
+<?php
+/* translators: %s: Yelp */
+echo esc_html(sprintf(__('There are no reviews on your %s platform.', 'reviews-widgets-for-yelp'), 'Yelp'));
+?>
+</p>
+</div>
+<?php endif; ?>
+<div class="ti-box ti-box-filter">
+<label><?php echo esc_html(__('Layout', 'reviews-widgets-for-yelp')); ?>:</label>
+<span class="ti-checkbox">
+<input type="radio" name="layout-select" value="" data-ids="" checked>
+<label><?php echo esc_html(__('All', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php foreach ($pluginManager::$widget_templates['categories'] as $category => $ids): ?>
+<span class="ti-checkbox">
+<input type="radio" name="layout-select" value="<?php echo esc_attr($category); ?>" data-ids="<?php echo esc_attr($ids); ?>">
+<label><?php
+switch ($category) {
+case 'slider':
+echo esc_html(__('Slider', 'reviews-widgets-for-yelp'));
+break;
+case 'sidebar':
+echo esc_html(__('Sidebar', 'reviews-widgets-for-yelp'));
+break;
+case 'list':
+echo esc_html(__('List', 'reviews-widgets-for-yelp'));
+break;
+case 'grid':
+echo esc_html(__('Grid', 'reviews-widgets-for-yelp'));
+break;
+case 'Badge':
+echo esc_html(__('Badge', 'reviews-widgets-for-yelp'));
+break;
+case 'Button':
+echo esc_html(__('Button', 'reviews-widgets-for-yelp'));
+break;
+case 'floating':
+echo esc_html(__('Floating', 'reviews-widgets-for-yelp'));
+break;
+case 'popup':
+echo esc_html(__('Popup', 'reviews-widgets-for-yelp'));
+break;
+case 'top-rated-badge':
+echo esc_html(__('Top Rated Badge', 'reviews-widgets-for-yelp'));
+break;
+case 'fomo':
+echo esc_html(__('Fomo', 'reviews-widgets-for-yelp'));
+break;
+default:
+echo esc_html($category);
+break;
+}
+?></label>
+</span>
+<?php endforeach; ?>
+</div>
+<div class="ti-preview-boxes-container">
+<?php foreach ($pluginManager::$widget_templates['templates'] as $id => $template): ?>
+<?php
+$className = 'ti-full-width';
+if (in_array($template['type'], [ 'badge', 'button', 'floating', 'popup', 'sidebar', 'top-rated-badge', 'fomo' ])) {
+$className = 'ti-half-width';
+}
+$set = 'light-background';
+if (in_array($template['type'], [ 'badge', 'button' ])) {
+$set = 'drop-shadow';
+}
+if ($template['is-top-rated-badge']) {
+$set = 'light-minimal';
+if (isset($template['params']['top-rated-badge-border']) && $template['params']['top-rated-badge-border']) {
+$set = 'ligth-border';
+}
+}
+$isTopRatedBadgeValid = isset($pageDetails['rating_score']) ? (float)$pageDetails['rating_score'] >= $pluginManager::$topRatedMinimumScore : false;
+$fomoWidgetInvalid = in_array($id, [119, 120]) && (!isset($pageDetails['rating_numbers']) || !isset($pageDetails['rating_numbers_last']));
+
+if ($fomoWidgetInvalid) {
+continue;
+}
+if (!isset($template['is-active']) || $template['is-active']):
+?>
+<div class="<?php echo esc_attr($className); ?>">
+<div class="ti-box ti-preview-boxes" data-layout-id="<?php echo esc_attr($id); ?>" data-set-id="<?php echo esc_attr($set); ?>">
+<div class="ti-box-inner">
+<div class="ti-box-header ti-box-header-normal">
+<?php echo esc_html(__('Layout', 'reviews-widgets-for-yelp')); ?>:
+<strong><?php echo esc_html($template['name']); ?></strong>
+<?php if ($template['is-popular'] || 14 === $id): ?>
+<span class="ti-badge ti-most-popular-badge ti-tooltip">
+<?php echo esc_html(__('Most popular', 'reviews-widgets-for-yelp')); ?> <span class="dashicons dashicons-info-outline"></span>
+<span class="ti-tooltip-message"><?php echo
+esc_html(__('Selected by most users!', 'reviews-widgets-for-yelp')).' '.
+esc_html(__('This widget layout helps build trust and effectively increases sales.', 'reviews-widgets-for-yelp'));
+?></span>
+</span>
+<?php endif; ?>
+<?php if (14 === $id) :?>
+<a href="#" class="ti-btn ti-btn-sm ti-pull-right" style="pointer-events: none;background: grey">
+<?php echo esc_html(__('Paid package feature', 'reviews-widgets-for-yelp')); ?>
+</a>
+<?php elseif ((!$template['is-top-rated-badge'] || $isTopRatedBadgeValid) && !$fomoWidgetInvalid): ?>
+<a href="<?php echo esc_url(wp_nonce_url('?page='. esc_attr($_page) .'&tab=free-widget-configurator&command=save-style&style_id='. esc_attr(urlencode($id)), 'ti-save-style')); ?>" class="ti-btn ti-btn-sm ti-btn-loading-on-click ti-pull-right"><?php echo esc_html(__('Select', 'reviews-widgets-for-yelp')); ?></a>
+<div class="clear"></div>
+<?php endif; ?>
+</div>
+<div class="preview">
+<?php if ($template['is-top-rated-badge'] && !$isTopRatedBadgeValid): ?>
+<div class="ti-notice ti-notice-info" style="margin: 0 0 15px 0">
+<p>
+<?php
+/* translators: %d: minimum score (4.5) */
+echo esc_html(sprintf(__('Our exclusive "Top Rated" badge is awarded to service providers with a rating of %s and above.', 'reviews-widgets-for-yelp'), $pluginManager::$topRatedMinimumScore));
+?><br />
+</p>
+</div>
+<?php endif; ?>
+<?php if ($fomoWidgetInvalid): ?>
+<div class="ti-notice ti-notice-info" style="margin: 0 0 15px 0">
+<p>
+<?php echo esc_html(__('Update your reviews to use this widget.', 'reviews-widgets-for-yelp')); ?><br />
+</p>
+</div>
+<?php endif; ?>
+<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- renderWidgetAdmin() escapes its own markup ?>
+<?php echo $pluginManagerInstance->renderWidgetAdmin(true, false, ['style-id' => esc_attr($id), 'set-id' => esc_attr($set)]); ?>
+</div>
+</div>
+</div>
+</div>
+<?php endif; ?>
+<?php endforeach; ?>
+</div>
+<?php elseif ($stepCurrent === 3): ?>
+<h1 class="ti-header-title"><?php echo esc_html(__('Select Style', 'reviews-widgets-for-yelp')); ?></h1>
+<?php if (!count($reviews) && !$isReviewDownloadInProgress): ?>
+<div class="ti-notice ti-notice-warning" style="margin: 0 0 15px 0">
+<p>
+<?php
+/* translators: %s: Yelp */
+echo esc_html(sprintf(__('There are no reviews on your %s platform.', 'reviews-widgets-for-yelp'), 'Yelp'));
+?>
+</p>
+</div>
+<?php endif; ?>
+<?php
+$className = 'ti-full-width';
+if (in_array($pluginManager::$widget_templates['templates'][ $styleId ]['type'], [ 'badge', 'button', 'floating', 'popup', 'sidebar', 'top-rated-badge' ])) {
+$className = 'ti-half-width';
+}
+?>
+<div class="ti-preview-boxes-container">
+<?php
+$isFirstLayout = true;
+$isVerifiedByTrustindexAvailable = $pluginManagerInstance->isVerifiedByTrustindexAvailable();
+foreach ($pluginManager::$widget_styles as $id => $style): ?>
+<?php if (!isset($style['is-active']) || $style['is-active']): ?>
+<div class="<?php echo esc_attr($className); ?>">
+<div class="ti-box ti-preview-boxes" data-layout-id="<?php echo esc_attr($styleId); ?>" data-set-id="<?php echo esc_attr($id); ?>">
+<div class="ti-box-inner">
+<div class="ti-box-header ti-box-header-normal">
+<?php echo esc_html(__('Style', 'reviews-widgets-for-yelp')); ?>:
+<strong><?php echo esc_html($style['name']); ?></strong>
+<?php if ($isFirstLayout && !$isVerifiedByTrustindexAvailable): ?>
+<span class="ti-badge ti-most-popular-badge ti-tooltip">
+<?php echo esc_html(__('Most popular', 'reviews-widgets-for-yelp')); ?> <span class="dashicons dashicons-info-outline"></span>
+<span class="ti-tooltip-message"><?php echo
+esc_html(__('Selected by most users!', 'reviews-widgets-for-yelp')).' '.
+esc_html(__('This widget style helps build trust and effectively increases sales.', 'reviews-widgets-for-yelp'));
+?></span>
+</span>
+<?php endif; ?>
+<a href="<?php echo esc_url(wp_nonce_url('?page='. esc_attr($_page) .'&tab=free-widget-configurator&command=save-set&set_id='. esc_attr(urlencode($id)), 'ti-save-set')); ?>" class="ti-btn ti-btn-sm ti-btn-loading-on-click ti-pull-right"><?php echo esc_html(__('Select', 'reviews-widgets-for-yelp')); ?></a>
+<div class="clear"></div>
+</div>
+<div class="preview">
+<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- renderWidgetAdmin() escapes its own markup ?>
+<?php echo $pluginManagerInstance->renderWidgetAdmin(true, false, ['style-id' => esc_attr($styleId), 'set-id' => esc_attr($id)]); ?>
+</div>
+</div>
+</div>
+</div>
+<?php if ($id === 'light-background' && $isVerifiedByTrustindexAvailable): ?>
+<div class="<?php echo esc_attr($className); ?>">
+<div class="ti-box ti-preview-boxes" data-layout-id="<?php echo esc_attr($styleId); ?>" data-set-id="<?php echo esc_attr($id); ?>">
+<div class="ti-box-inner">
+<div class="ti-box-header ti-box-header-normal">
+<?php echo esc_html(__('Style', 'reviews-widgets-for-yelp')); ?>:
+<strong>
+<?php echo esc_html($style['name']); ?>
+-
+<?php echo esc_html(__('with Trustindex verified', 'reviews-widgets-for-yelp')); ?>
+</strong>
+<?php if ($className === 'ti-half-width'): ?><br /><?php endif; ?>
+<span class="ti-badge ti-most-popular-badge ti-tooltip">
+<?php echo esc_html(__('Most popular', 'reviews-widgets-for-yelp')); ?> <span class="dashicons dashicons-info-outline"></span>
+<span class="ti-tooltip-message"><?php echo
+esc_html(__('Selected by most users!', 'reviews-widgets-for-yelp')).' '.
+esc_html(__('This widget style helps build trust and effectively increases sales.', 'reviews-widgets-for-yelp'));
+?></span>
+</span>
+<a href="<?php echo esc_url(wp_nonce_url('?page='. esc_attr($_page) .'&tab=free-widget-configurator&command=save-set&set_id='. esc_attr(urlencode($id)), 'ti-save-set')); ?>&verified_by_trustindex" class="ti-btn ti-btn-sm ti-btn-loading-on-click ti-pull-right"><?php echo esc_html(__('Select', 'reviews-widgets-for-yelp')); ?></a>
+<div class="clear"></div>
+</div>
+<div class="preview">
+<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- renderWidgetAdmin() escapes its own markup ?>
+<?php echo $pluginManagerInstance->renderWidgetAdmin(true, false, ['style-id' => esc_attr($styleId), 'set-id' => esc_attr($id), 'verified-by-trustindex' => true]); ?>
+</div>
+</div>
+<div class="ti-notice ti-notice-info ti-verified-badge-notice">
+<p>
+<span class="dashicons dashicons-star-empty"></span> <strong><?php echo esc_html(__('Congratulations!', 'reviews-widgets-for-yelp')); ?></strong><br />
+<?php
+/* translators: 1: 5, 2: 4.5, 3: 12 */
+echo esc_html(sprintf(__('Our system ranked you in the top %1$d%% of companies based on your reviews. Your total rating score above %2$s in the last %3$d month, and your reviews are genuine.', 'reviews-widgets-for-yelp'), 5, $pluginManager::$topRatedMinimumScore, 12));
+?><br />
+<?php echo wp_kses_post(__('This allows you to <strong>use in the widgets the Trustindex verified badge, the Universal Symbol of Trust.</strong> With the verified badge you can build more trust, and sell more!', 'reviews-widgets-for-yelp')); ?>
+</p>
+</div>
+</div>
+</div>
+<?php endif; ?>
+<?php endif; ?>
+<?php
+$isFirstLayout = false;
+endforeach; ?>
+</div>
+<?php elseif ($stepCurrent === 4): ?>
+<h1 class="ti-header-title"><?php echo esc_html(__('Set up widget', 'reviews-widgets-for-yelp')); ?></h1>
+<?php if (!count($reviews) && !$isReviewDownloadInProgress): ?>
+<div class="ti-notice ti-notice-warning" style="margin: 0 0 15px 0">
+<p>
+<?php
+/* translators: %s: Yelp */
+echo esc_html(sprintf(__('There are no reviews on your %s platform.', 'reviews-widgets-for-yelp'), 'Yelp'));
+?>
+</p>
+</div>
+<?php endif; ?>
+<?php if ($isTopRatedBadge && !$isTopRatedBadgeValid): ?>
+<div class="ti-notice ti-notice-error" style="margin: 0 0 15px 0">
+<p>
+<?php
+/* translators: %s: min score (4.5) */
+echo esc_html(sprintf(__('Our exclusive "Top Rated" badge is awarded to service providers with a rating of %s and above.', 'reviews-widgets-for-yelp'), $pluginManager::$topRatedMinimumScore));
+?><br />
+<a href="?page=<?php echo esc_attr($_page); ?>&tab=free-widget-configurator&step=2" class="ti-btn ti-btn-sm ti-btn-loading-on-click" style="margin-top: 10px"><?php echo esc_html(__('Please select another widget', 'reviews-widgets-for-yelp')); ?></a>
+</p>
+</div>
+<?php endif; ?>
+<div class="ti-preview-boxes-container">
+<div class="ti-full-width">
+<div class="ti-box ti-preview-boxes" data-layout-id="<?php echo esc_attr($styleId); ?>" data-set-id="<?php echo esc_attr($scssSet); ?>">
+<div class="ti-box-inner">
+<div class="ti-box-header">
+<?php echo esc_html(__('Widget Preview', 'reviews-widgets-for-yelp')); ?>
+<?php if (!in_array($styleId, [17, 21, 52, 53, 112, 114])): ?>
+<span class="ti-box-header-normal ti-pull-right">
+<?php echo esc_html(__('Style', 'reviews-widgets-for-yelp')); ?>:
+<strong><?php echo esc_html($pluginManager::$widget_styles[ $scssSet ]['name']); ?></strong>
+</span>
+<?php endif; ?>
+<span class="ti-box-header-normal ti-pull-right">
+<?php echo esc_html(__('Layout', 'reviews-widgets-for-yelp')); ?>:
+<strong><?php echo esc_html($pluginManager::$widget_templates['templates'][ $styleId ]['name']); ?></strong>
+</span>
+</div>
+<div class="preview ti-widget-editor-preview">
+<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- renderWidgetAdmin() escapes its own markup ?>
+<?php echo $pluginManagerInstance->renderWidgetAdmin(true); ?>
+</div>
+</div>
+</div>
+</div>
+</div>
+<?php $filter = $pluginManagerInstance->getWidgetOption('filter'); ?>
+<?php $applicableOptions = $widgetSettings->getApplicableOptions(); ?>
+<div class="ti-preview-boxes-container">
+<div class="ti-full-width">
+<div class="ti-box">
+<div class="ti-box-inner">
+<div class="ti-box-header"><?php echo esc_html(__('Widget Settings', 'reviews-widgets-for-yelp')); ?></div>
+<div class="ti-left-block" id="ti-widget-selects">
+<?php if ($pluginManagerInstance->isVerifiedByTrustindexAvailable()): ?>
+<div class="ti-form-group">
+<label>
+<?php echo esc_html(__('Verified by Trustindex', 'reviews-widgets-for-yelp')); ?>
+<span class="ti-badge ti-badge-info"><?php echo esc_html(__('Recommended', 'reviews-widgets-for-yelp')); ?></span>
+</label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-verified-by-trustindex" />
+<?php wp_nonce_field('ti-save-verified-by-trustindex'); ?>
+<?php $verifiedByTrustindex = (int)$pluginManagerInstance->getWidgetOption('verified-by-trustindex'); ?>
+<select class="ti-form-control" name="verified-by-trustindex">
+<option value="0"<?php if (!$verifiedByTrustindex): ?> selected<?php endif; ?>><?php echo esc_html(__('Hide', 'reviews-widgets-for-yelp')); ?></option>
+<option value="1"<?php if ($verifiedByTrustindex === 1): ?> selected<?php endif; ?>><?php echo
+/* translators: %d: 1 */
+esc_html(sprintf(__('Style %d', 'reviews-widgets-for-yelp'), 1));
+?></option>
+<option value="2"<?php if ($verifiedByTrustindex === 2): ?> selected<?php endif; ?>><?php
+/* translators: %d: 2 */
+echo esc_html(sprintf(__('Style %d', 'reviews-widgets-for-yelp'), 2));
+?></option>
+</select>
+</form>
+</div>
+<?php endif; ?>
+<?php if ($pluginManagerInstance->isLayoutHasReviews()): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Filter your ratings', 'reviews-widgets-for-yelp')); ?></label>
+
+<form method="post" action="">
+<input type="hidden" name="command" value="save-filter-stars" />
+<?php wp_nonce_field('ti-save-filter-stars'); ?>
+<select class="ti-form-control" name="stars">
+<option value="1,2,3,4,5"<?php if (count($filter['stars']) > 2): ?> selected<?php endif; ?>><?php echo esc_html(__('Show all', 'reviews-widgets-for-yelp')); ?></option>
+<option value="4,5"<?php if (count($filter['stars']) === 2): ?> selected<?php endif; ?>>&starf;&starf;&starf;&starf; - &starf;&starf;&starf;&starf;&starf;</option>
+<option value="5"<?php if (count($filter['stars']) === 1): ?> selected<?php endif; ?>><?php echo esc_html(__('only', 'reviews-widgets-for-yelp')); ?> &starf;&starf;&starf;&starf;&starf;</option>
+</select>
+</form>
+</div>
+<?php endif; ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Select language', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-language" />
+<?php wp_nonce_field('ti-save-language'); ?>
+<select class="ti-form-control" name="lang">
+<?php foreach ($pluginManager::$widget_languages as $id => $name): ?>
+<option value="<?php echo esc_attr($id); ?>" <?php echo $pluginManagerInstance->getWidgetOption('lang') == $id ? 'selected' : ''; ?>><?php echo esc_html($name); ?></option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<?php if ($pluginManagerInstance->isLayoutHasReviews()): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Select date format', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-dateformat" />
+<?php wp_nonce_field('ti-save-dateformat'); ?>
+<select class="ti-form-control" name="dateformat">
+<?php foreach ($pluginManager::$widget_dateformats as $format): ?>
+<option value="<?php echo esc_attr($format); ?>" <?php echo $pluginManagerInstance->getWidgetOption('dateformat') == $format ? 'selected' : ''; ?>><?php
+switch ($format) {
+case 'modern':
+$lang = $pluginManager::getWidgetLanguage(get_locale());
+$tmp = explode('|', $pluginManager::$widget_date_format_locales[$lang]);
+echo esc_html(str_replace([ '%d', '%s' ], [ 2, $tmp[3] ], $tmp[0]));
+break;
+case 'hide':
+echo esc_html(__('Hide', 'reviews-widgets-for-yelp'));
+break;
+default:
+echo esc_html(gmdate($format));
+break;
+}
+?></option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Select name format', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-nameformat" />
+<?php wp_nonce_field('ti-save-nameformat'); ?>
+<select class="ti-form-control" name="nameformat">
+<?php foreach ($pluginManager::$widget_nameformats as $format): ?>
+<option value="<?php echo esc_attr($format['id']); ?>" <?php echo $pluginManagerInstance->getWidgetOption('nameformat') == $format['id'] ? 'selected' : ''; ?>>
+<?php
+if (1 === (int)$format['id']) {
+echo esc_html(__('Do not format', 'reviews-widgets-for-yelp'));
+} else {
+echo esc_html($pluginManagerInstance->renderNameFormat('Firstname Lastname', $format['id']));
+}
+?>
+</option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<?php if (in_array('review-text-mode', $applicableOptions, true)): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Align', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-align" />
+<?php wp_nonce_field('ti-save-align'); ?>
+<select class="ti-form-control" name="align">
+<option value="left" <?php echo $pluginManagerInstance->getWidgetOption('align') === 'left' ? 'selected' : ''; ?>><?php echo esc_html(__('left', 'reviews-widgets-for-yelp')); ?></option>
+<option value="center" <?php echo $pluginManagerInstance->getWidgetOption('align') === 'center' ? 'selected' : ''; ?>><?php echo esc_html(__('center', 'reviews-widgets-for-yelp')); ?></option>
+<option value="right" <?php echo $pluginManagerInstance->getWidgetOption('align') === 'right' ? 'selected' : ''; ?>><?php echo esc_html(__('right', 'reviews-widgets-for-yelp')); ?></option>
+<option value="justify" <?php echo $pluginManagerInstance->getWidgetOption('align') === 'justify' ? 'selected' : ''; ?>><?php echo esc_html(__('justify', 'reviews-widgets-for-yelp')); ?></option>
+</select>
+</form>
+</div>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Review text', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-review-text-mode" />
+<?php wp_nonce_field('ti-save-review-text-mode'); ?>
+<select class="ti-form-control" name="review_text_mode">
+<option value="scroll" <?php echo $pluginManagerInstance->getWidgetOption('review-text-mode') === 'scroll' ? 'selected' : ''; ?>><?php echo esc_html(__('Scroll', 'reviews-widgets-for-yelp')); ?></option>
+<option value="readmore" <?php echo $pluginManagerInstance->getWidgetOption('review-text-mode') === 'readmore' ? 'selected' : ''; ?>><?php echo esc_html(__('Read more', 'reviews-widgets-for-yelp')); ?></option>
+<option value="truncated" <?php echo $pluginManagerInstance->getWidgetOption('review-text-mode') === 'truncated' ? 'selected' : ''; ?>><?php echo esc_html(__('Truncated', 'reviews-widgets-for-yelp')); ?></option>
+</select>
+</form>
+</div>
+<?php endif; ?>
+<?php endif; ?>
+<?php if ($isTopRatedBadge): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Select type', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-top-rated-type" />
+<?php wp_nonce_field('ti-save-top-rated-type'); ?>
+<select class="ti-form-control" name="type">
+<?php foreach ($pluginManager::$widget_top_rated_titles as $type => $langs): ?>
+<option value="<?php echo esc_attr($type); ?>" <?php echo $pluginManagerInstance->getWidgetOption('top-rated-type') == $type ? 'selected' : ''; ?>><?php
+switch ($type) {
+case 'Apartment':
+echo esc_html(__('Apartment', 'reviews-widgets-for-yelp'));
+break;
+case 'Bar':
+echo esc_html(__('Bar', 'reviews-widgets-for-yelp'));
+break;
+case 'Cafe':
+echo esc_html(__('Cafe', 'reviews-widgets-for-yelp'));
+break;
+case 'Clinic':
+echo esc_html(__('Clinic', 'reviews-widgets-for-yelp'));
+break;
+case 'Hotel':
+echo esc_html(__('Hotel', 'reviews-widgets-for-yelp'));
+break;
+case 'Provider':
+echo esc_html(__('Provider', 'reviews-widgets-for-yelp'));
+break;
+case 'Restaurant':
+echo esc_html(__('Restaurant', 'reviews-widgets-for-yelp'));
+break;
+case 'Service':
+echo esc_html(__('Service', 'reviews-widgets-for-yelp'));
+break;
+case 'Webshop':
+echo esc_html(__('Webshop', 'reviews-widgets-for-yelp'));
+break;
+default:
+echo esc_html($type);
+break;
+}
+?></option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<?php if (!$pluginManagerInstance->isFomoWidget()): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Select date format', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-top-rated-date" />
+<?php wp_nonce_field('ti-save-top-rated-date'); ?>
+<?php $topRatedDate = $pluginManagerInstance->getWidgetOption('top-rated-date'); ?>
+<select class="ti-form-control" name="date">
+<option value="hide"<?php if ($topRatedDate === 'hide'): ?> selected<?php endif; ?>><?php echo esc_html(__("Hide", 'reviews-widgets-for-yelp')); ?></option>
+<option value="last-year"<?php if ($topRatedDate === 'last-year'): ?> selected<?php endif; ?>><?php echo esc_html(__("Last year", 'reviews-widgets-for-yelp')); ?></option>
+<option value=""<?php if (!$topRatedDate): ?> selected<?php endif; ?>><?php echo esc_html(__("Current year", 'reviews-widgets-for-yelp')); ?></option>
+</select>
+</form>
+</div>
+<?php endif; ?>
+<?php endif; ?>
+<?php if ($pluginManagerInstance->isFomoWidget()): ?>
+<?php if ($pluginManagerInstance->isFomoCustomWidget()): ?>
+<div class="ti-form-group" style="max-width: 400px">
+<label><?php echo esc_html(__('Title', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-title" />
+<?php wp_nonce_field('ti-save-fomo-title'); ?>
+<input type="text" class="ti-form-control ti-save-input-on-change" value="<?php echo esc_attr(wp_kses($pluginManagerInstance->getWidgetOption('fomo-title'), ['u' => []])); ?>" name="fomo-title" />
+<small class="ti-text-muted" style="padding-left: 5px"><?php echo esc_html(htmlentities(__('Enclose the text in <u></u> if you want to highlight it', 'reviews-widgets-for-yelp'))); ?></small>
+</form>
+</div>
+<div class="ti-form-group" style="max-width: 400px">
+<label><?php echo esc_html(__('Subtitle', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-text" />
+<?php wp_nonce_field('ti-save-fomo-text'); ?>
+<input type="text" class="ti-form-control ti-save-input-on-change" value="<?php echo esc_attr(wp_kses($pluginManagerInstance->getWidgetOption('fomo-text'), ['u' => []])); ?>" name="fomo-text" />
+<small class="ti-text-muted" style="padding-left: 5px"><?php echo esc_html(htmlentities(__('Enclose the text in <u></u> if you want to highlight it', 'reviews-widgets-for-yelp'))); ?></small>
+</form>
+</div>
+<?php endif; ?>
+<?php if ($choices = $pluginManagerInstance->getFomoSubtitleTextChoices()): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Subtitle', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-text" />
+<?php wp_nonce_field('ti-save-fomo-text'); ?>
+<select class="ti-form-control" name="fomo-text">
+<option value="hide" <?php echo $pluginManagerInstance->getWidgetOption('fomo-text') === '' ? 'selected' : ''; ?>><?php echo esc_html(__('Hide', 'reviews-widgets-for-yelp')); ?></option>
+<?php foreach ($choices as $choice => $choiceText): ?>
+<option value="<?php echo esc_attr($choice); ?>" <?php echo $pluginManagerInstance->getWidgetOption('fomo-text') == $choice ? 'selected' : ''; ?>><?php echo esc_html($choiceText); ?></option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<?php endif; ?>
+<div class="ti-form-row">
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Icon', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-icon" />
+<?php wp_nonce_field('ti-save-fomo-icon'); ?>
+<select class="ti-form-control" name="fomo-icon">
+<option value="hide" <?php echo $pluginManagerInstance->getWidgetOption('fomo-icon') === 'hide' ? 'selected' : ''; ?>><?php echo esc_html(__('Hide', 'reviews-widgets-for-yelp')); ?></option>
+<?php foreach ($pluginManager::$widget_templates['templates'][$styleId]['params']['fomo-icon-choices'] as $icon): ?>
+<option value="<?php echo esc_attr($icon); ?>" <?php echo $pluginManagerInstance->getWidgetOption('fomo-icon') == $icon ? 'selected' : ''; ?>><?php
+switch ($icon) {
+case 'profile-images':
+echo esc_html(__('Profile images', 'reviews-widgets-for-yelp'));
+break;
+case 'platform':
+echo esc_html(__('Platform', 'reviews-widgets-for-yelp'));
+break;
+default:
+echo esc_html(ucfirst($icon));
+break;
+}
+?></option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Color', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-color" />
+<?php wp_nonce_field('ti-save-fomo-color'); ?>
+<input type="text" class="ti-form-control ti-color-picker ti-save-input-on-change-color" value="<?php echo esc_attr($pluginManagerInstance->getWidgetOption('fomo-color')); ?>" name="fomo-color" readonly />
+</form>
+</div>
+</div>
+<div class="ti-form-row">
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Align', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-align" />
+<?php wp_nonce_field('ti-save-align'); ?>
+<select class="ti-form-control" name="align">
+<option value="left" <?php echo $pluginManagerInstance->getWidgetOption('align') === 'left' ? 'selected' : ''; ?>><?php echo esc_html(__('left', 'reviews-widgets-for-yelp')); ?></option>
+<option value="right" <?php echo $pluginManagerInstance->getWidgetOption('align') === 'right' ? 'selected' : ''; ?>><?php echo esc_html(__('right', 'reviews-widgets-for-yelp')); ?></option>
+</select>
+</form>
+</div>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Margin', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-margin" />
+<?php wp_nonce_field('ti-save-fomo-margin'); ?>
+<input type="number" class="ti-form-control ti-save-input-on-change" min=0 step=1 value="<?php echo esc_attr($pluginManagerInstance->getWidgetOption('fomo-margin')); ?>" name="fomo-margin" />
+</form>
+</div>
+</div>
+<div class="ti-form-row">
+<?php if (in_array('fomo-day', $applicableOptions, true)): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Number of days', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-day" />
+<?php wp_nonce_field('ti-save-fomo-day'); ?>
+<select class="ti-form-control" name="fomo-day">
+<?php foreach ($pluginManager::$widget_templates['templates'][$styleId]['params']['fomo-days'] as $day): ?>
+<?php
+/* translators: %d: Number of days */
+$name = sprintf(__('%d days', 'reviews-widgets-for-yelp'), $day);
+if ($day === 1) {
+/* translators: %d: 24 */
+$name = sprintf(__('%d hours', 'reviews-widgets-for-yelp'), 24);
+}
+?>
+<option value="<?php echo esc_attr($day); ?>" <?php echo $pluginManagerInstance->getWidgetOption('fomo-day') == $day ? 'selected' : ''; ?>><?php echo esc_html($name); ?></option>
+<?php endforeach; ?>
+</select>
+</form>
+</div>
+<?php endif; ?>
+<?php if (in_array('fomo-hide-count', $applicableOptions, true)): ?>
+<div class="ti-form-group">
+<label><?php echo esc_html(__('Hide until count reaches', 'reviews-widgets-for-yelp')); ?></label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-hide-count" />
+<?php wp_nonce_field('ti-save-fomo-hide-count'); ?>
+<input type="number" class="ti-form-control ti-save-input-on-change" min=0 step=1 value="<?php echo esc_attr($pluginManagerInstance->getWidgetOption('fomo-hide-count')); ?>" name="fomo-hide-count" />
+</form>
+</div>
+<?php endif; ?>
+</div>
+<?php endif; ?>
+</div>
+<div class="ti-right-block">
+<form method="post" id="ti-widget-options">
+<input type="hidden" name="command" value="save-options" />
+<?php wp_nonce_field('ti-save-options'); ?>
+<?php if (in_array('only-ratings', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="only-ratings" value="1"<?php if ($filter['only-ratings']): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Hide reviews without comments', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('no-rating-text', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="no-rating-text" value="1"<?php if ($pluginManagerInstance->getWidgetOption('no-rating-text')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Hide rating text', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('footer-filter-text', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="footer-filter-text" value="1"<?php if ($pluginManagerInstance->getWidgetOption('footer-filter-text')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show minimum review filter condition', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('show-review-replies', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="show-review-replies" value="1"<?php if ($pluginManagerInstance->getWidgetOption('show-review-replies')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show review reply', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('show-header-button', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="show-header-button" value="1"<?php if ($pluginManagerInstance->getWidgetOption('show-header-button')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show write review button', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('reviews-load-more', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="reviews-load-more" value="1"<?php if ($pluginManagerInstance->getWidgetOption('reviews-load-more')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show "Load more" button', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('verified-icon', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="verified-icon" value="1"<?php if ($pluginManagerInstance->getWidgetOption('verified-icon')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show verified review icon', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('show-arrows', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="show-arrows" value="1"<?php if ($pluginManagerInstance->getWidgetOption('show-arrows')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show navigation arrows', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('show-reviewers-photo', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="show-reviewers-photo" value="1"<?php if ($pluginManagerInstance->getWidgetOption('show-reviewers-photo')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__("Show reviewer's profile picture", 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<span class="ti-checkbox ti-checkbox-row ti-disabled">
+<input type="checkbox" value="1" disabled />
+<label class="ti-tooltip">
+<?php echo esc_html(__("Show reviewer's profile picture locally, from a single image (less requests)", 'reviews-widgets-for-yelp')); ?>
+<span class="ti-tooltip-message"><?php echo esc_html(__('Paid package feature', 'reviews-widgets-for-yelp')); ?></span>
+</label>
+</span>
+
+<span class="ti-checkbox ti-checkbox-row ti-disabled">
+<input type="checkbox" value="1" disabled />
+<label class="ti-tooltip">
+<?php echo esc_html(__('Show photos in reviews', 'reviews-widgets-for-yelp')); ?>
+<span class="ti-tooltip-message"><?php echo esc_html(__('Paid package feature', 'reviews-widgets-for-yelp')); ?></span>
+</label>
+</span>
+<?php endif; ?>
+<?php if (in_array('enable-animation', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="enable-animation" value="1"<?php if ($pluginManagerInstance->getWidgetOption('enable-animation')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Enable mouseover animation', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('disable-font', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="disable-font" value="1"<?php if ($pluginManagerInstance->getWidgetOption('disable-font')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__("Use site's font", 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if (in_array('show-logos', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="show-logos" value="1"<?php if ($pluginManagerInstance->getWidgetOption('show-logos')): ?> checked<?php endif;?> />
+<label><?php echo esc_html(__('Show platform logos', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="show-stars" value="1"<?php if ($pluginManagerInstance->getWidgetOption('show-stars')): ?> checked<?php endif;?> />
+<label><?php echo esc_html(__('Show platform stars', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php if ($pluginManagerInstance->isFomoWidget()): ?>
+<?php if (in_array('fomo-open', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="fomo-open" value="1"<?php if ($pluginManagerInstance->getWidgetOption('fomo-open')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Default open', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="fomo-border" value="1"<?php if ($pluginManagerInstance->getWidgetOption('fomo-border')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show border', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php if (in_array('fomo-icon-background', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="fomo-icon-background" value="1"<?php if ($pluginManagerInstance->getWidgetOption('fomo-icon-background')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show icon background', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="fomo-link" value="1"<?php if ($pluginManagerInstance->getWidgetOption('fomo-link')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Enable link', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php if (in_array('fomo-arrow', $applicableOptions, true)): ?>
+<span class="ti-checkbox ti-checkbox-row">
+<input type="checkbox" name="fomo-arrow" value="1"<?php if ($pluginManagerInstance->getWidgetOption('fomo-arrow')): ?> checked<?php endif; ?> />
+<label><?php echo esc_html(__('Show arrow', 'reviews-widgets-for-yelp')); ?></label>
+</span>
+<?php endif; ?>
+<?php endif; ?>
+</form>
+<div class="clear"></div>
+<?php if (in_array('fomo-url', $applicableOptions, true)): ?>
+<div class="ti-form-group ti-mt-4">
+<label>URL</label>
+<form method="post" action="">
+<input type="hidden" name="command" value="save-fomo-url" />
+<?php wp_nonce_field('ti-save-fomo-url'); ?>
+<input type="text" class="ti-form-control ti-save-input-on-change" value="<?php echo esc_attr($pluginManagerInstance->getWidgetOption('fomo-url')); ?>" name="fomo-url" />
+</form>
+</div>
+<?php endif; ?>
+</div>
+<div class="clear"></div>
+<?php if (!$isTopRatedBadge || $isTopRatedBadgeValid): ?>
+<div class="ti-box-footer">
+<a href="<?php echo esc_url(wp_nonce_url('?page='. esc_attr($_page) .'&tab=free-widget-configurator&setup_widget', 'ti-setup-widget')); ?>" class="ti-btn ti-btn-loading-on-click ti-pull-right"><?php echo esc_html(__('Save and get code', 'reviews-widgets-for-yelp')); ?></a>
+<div class="clear"></div>
+</div>
+<?php endif; ?>
+</div>
+</div>
+</div>
+</div>
+<?php else: ?>
+<h1 class="ti-header-title"><?php echo esc_html(__('Insert code', 'reviews-widgets-for-yelp')); ?></h1>
+<?php if (!count($reviews) && !$isReviewDownloadInProgress): ?>
+<div class="ti-notice ti-notice-warning" style="margin: 0 0 15px 0">
+<p>
+<?php
+/* translators: %s: Yelp */
+echo esc_html(sprintf(__('There are no reviews on your %s platform.', 'reviews-widgets-for-yelp'), 'Yelp'));
+?>
+</p>
+</div>
+<?php endif; ?>
+<div class="ti-box">
+<div class="ti-box-header"><?php echo esc_html(__('Insert this shortcode into your website', 'reviews-widgets-for-yelp')); ?></div>
+<?php include(plugin_dir_path(__FILE__) . '../include/shortcode-paste-box.php'); ?>
+</div>
+<?php if (!get_option($pluginManagerInstance->get_option_name('rate-us-feedback'), 0)): ?>
+<?php include(plugin_dir_path(__FILE__) . '../include/rate-us-feedback-box.php'); ?>
+<?php endif; ?>
+<div class="ti-box ti-sales-widget-box-container">
+<div class="ti-box-header">
+<?php echo
+/* translators: 1: widget count, 2: percent */
+esc_html(sprintf(__('%1$d Professional Review Widgets That Help Boost Sales by %2$d%%', 'reviews-widgets-for-yelp'), 5, 9));
+?>
+<small>
+<?php echo
+/* translators: %d: widget count */
+esc_html(sprintf(__('For best results, generate all %d widgets and place them in the recommended positions.', 'reviews-widgets-for-yelp'), 5));
+?>
+</small>
+<?php echo wp_kses_post($pluginManagerInstance->getProFeatureButton('wp-yelp-'.(!class_exists('Woocommerce') ? 6 : 7))); ?>
+</div>
+<?php
+$tiSalesRows = [
+[
+'Button VIII.',
+__('Homepage – Hero section', 'reviews-widgets-for-yelp'),
+__('Reduces bounce rate', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-button8.png'),
+300,
+],
+[
+'Slider I. <i>('.__('with header', 'reviews-widgets-for-yelp').')</i>',
+__('Homepage – Middle of the page', 'reviews-widgets-for-yelp'),
+__('Increases time on site, improves SEO, more sales', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-slider1-with-header.png'),
+1200,
+],
+[
+'Top Rated Badge VIII.',
+__('Homepage – Footer', 'reviews-widgets-for-yelp'),
+__('More calls and emails', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-top-rated-badge8.png'),
+300,
+],
+[
+'Button III.',
+__('Contact page - Under the contact form', 'reviews-widgets-for-yelp'),
+__('More enquires', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-button3.png'),
+300,
+],
+[
+__('Review Certificate', 'reviews-widgets-for-yelp'),
+__('Every page – Left corner of the page', 'reviews-widgets-for-yelp'),
+__('Builds trust', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-certificate.png'),
+350,
+],
+];
+if (class_exists('Woocommerce')) {
+$tiSalesRows = [
+[
+'Button VIII.',
+__('Homepage – Hero section', 'reviews-widgets-for-yelp'),
+__('Reduces bounce rate', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-button8.png'),
+300,
+],
+[
+'Slider I. <i>('.__('with header', 'reviews-widgets-for-yelp').')</i>',
+__('Homepage – Middle of the page', 'reviews-widgets-for-yelp'),
+__('Increases time on site, improves SEO, more sales', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-slider1-with-header.png'),
+1200,
+],
+[
+__('Review Certificate', 'reviews-widgets-for-yelp'),
+__('Every page – Left corner of the page', 'reviews-widgets-for-yelp'),
+__('Builds trust', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-certificate.png'),
+350,
+],
+[
+'Button III.',
+__('Every product page – Near price or cart button', 'reviews-widgets-for-yelp'),
+__('Increases purchases', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-button3.png'),
+300,
+],
+[
+'Slider I. <i>('.__('with footer', 'reviews-widgets-for-yelp').')</i>',
+__('Every product page – Below the product details', 'reviews-widgets-for-yelp'),
+__('Builds purchase confidence before checkout', 'reviews-widgets-for-yelp'),
+$pluginManagerInstance->get_plugin_file_url('static/img/ti-widget-tooltip-slider1-with-footer.png'),
+1200,
+],
+];
+}
+?>
+<div class="ti-sales-widget-box">
+<div class="ti-sales-widget-table">
+<div class="ti-sales-widget-row">
+<div><?php echo esc_html(__('Recommended widget', 'reviews-widgets-for-yelp')); ?></div>
+<div><?php echo esc_html(__('Where to place it', 'reviews-widgets-for-yelp')); ?></div>
+<div><?php echo esc_html(__('Main benefit', 'reviews-widgets-for-yelp')); ?></div>
+</div>
+<?php foreach ($tiSalesRows as $index => $item): ?>
+<div class="ti-sales-widget-row">
+<div>
+<div class="ti-sales-widget-row-title">
+<span><?php echo esc_html($index + 1).'.'; ?></span>
+<?php echo wp_kses_post($item[0]); ?>
+<span class="ti-sales-widget-preview-icon"></span>
+<div class="ti-sales-widget-preview" style="--ti-preview-width: <?php echo esc_attr($item[4]); ?>px;">
+<img src="<?php echo esc_url($item[3]); ?>" alt="" loading="lazy" />
+</div>
+</div>
+</div>
+<div><?php echo esc_html($item[1]); ?></div>
+<div><?php echo esc_html($item[2]); ?></div>
+</div>
+<?php endforeach; ?>
+</div>
+<div class="ti-sales-widget-cta">
+<div class="ti-sales-widget-cta-content">
+<strong><?php
+/* translators: %d: 9 */
+echo esc_html(sprintf(__('Recommended setup for +%d%% more sales', 'reviews-widgets-for-yelp'), 9));
+?></strong>
+<span><?php
+/* translators: %s: 35,000+ */
+echo esc_html(sprintf(__('Based on data from %s businesses.', 'reviews-widgets-for-yelp'), '35,000+'));
+?></span>
+</div>
+</div>
+</div>
+</div>
+<?php
+$tiCampaign1 = 'wp-yelp-1';
+$tiCampaign2 = 'wp-yelp-2';
+include(plugin_dir_path(__FILE__) . '../include/get-more-customers-box.php');
+?>
+<?php endif; ?>
+</div>

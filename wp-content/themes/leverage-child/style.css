@@ -1,0 +1,127 @@
+/**
+Theme Name: Leverage Child
+Template: leverage
+Theme URI: https://leverage.codings.dev
+Author: Codings
+Author URI: https://codings.dev
+Description: Recommended for advanced users. A child theme allows you to change small aspects of your site’s appearance yet still preserve your theme’s look and functionality.
+Tags: blog, e-commerce, portfolio, grid-layout, right-sidebar, custom-header, custom-logo, custom-menu, editor-style, featured-images, flexible-header, footer-widgets, theme-options
+Version: 1.0.0
+Text Domain: leverage-child
+Domain Path: /languages
+License: GNU General Public License v2 or later
+License URI: https://themeforest.net/licenses/standard
+Tested up to: 5.0
+Requires PHP: 7.0
+*/
+
+/*----------------------------------------------
+*
+* If you activated the Child Theme, the styles placed here will work.
+* 
+----------------------------------------------*/
+
+
+ul.ftr-menu li {
+    padding-left: 20px;
+    margin: 0px;
+}
+ul.ftr-menu {
+    display: flex;
+    justify-content: end;
+    list-style: none;
+}
+ul.ftr-menu li a {
+    color: #fff !important;
+}
+ul.ftr-menu li a:hover {
+	color:#fc5130 !important
+} 
+.count-box h2 {
+    color: #fc5130;
+    font-weight: 700;
+    font-size: 42px;
+}
+.count-box h4 {
+    margin-bottom: 0px;
+    font-weight: 600;
+    font-size: 21px;
+}
+.industries-main svg {
+    fill: #fc5130;
+}
+.industries-main .funds-icon svg path {
+    stroke: #fc5130;
+    fill: #000;
+}
+img {
+    filter: grayscale(1);
+}
+img:hover {
+    filter:none;
+}
+a.navbar-brand img {
+    filter: none;
+}
+.contact-form-div .input-group {
+    padding: 0px;
+}
+.contact-form-div .input-group input, .contact-form-div .input-group select {
+   height: 40px;
+    border: 2px solid #333;
+	background:transparent;
+}
+.contact-form-div .input-group textarea {
+   border: 2px solid #333;
+	background:transparent;
+	    min-height: 100px;
+    height: 120px;
+}
+.contact-form-div .input-group {
+    padding: 0px;
+    margin: 0px 0 10px;
+}
+.contact-form-div .input-group input.wpcf7-form-control.wpcf7-submit.has-spinner {
+    background: #fc5130;
+    color: #fff;
+    width: 114px;
+    border: none;
+    height: 44px;
+}
+section#contact {
+    display: none;
+}
+.contact-form-div .input-group input, .contact-form-div .input-group select, .contact-form-div .input-group textarea {
+    width: 100%;
+}
+.contact-form-div .input-group span.wpcf7-form-control-wrap {
+    width: 100%;
+}
+footer .brand .logo img {
+    filter: none;
+}
+header .navbar-expand .navbar-brand img {
+    width: 120px;
+    height: auto;
+}
+.google-reviewnew img {
+    filter: none;
+}
+
+
+.service-1 .card.featured:after {
+     background-image: url('https://pchelperteam.com/wp-content/uploads/2026/02/Computer-Repair-PC-Mac.jpg') !important; /* Set the image source */
+  background-repeat: no-repeat !important; /* Prevent the image from repeating */
+  background-size: cover !important; /* Scale the image to cover the entire element */
+  filter: grayscale(1);
+}
+
+.service-1 .card:not(.no-hover):hover{
+      background-image: url('https://pchelperteam.com/wp-content/uploads/2026/02/Computer-Repair-PC-Mac.jpg') !important;
+}
+
+
+.service-1 .items .item:first-child .card.featured:hover:before{
+        opacity: 1;
+
+}

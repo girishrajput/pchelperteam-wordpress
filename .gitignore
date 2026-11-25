@@ -1,0 +1,86 @@
+# ==============================================================================
+# WordPress .gitignore for pchelperteam-wordpress
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. WordPress Core Directories & Files
+# ------------------------------------------------------------------------------
+/wp-admin/
+/wp-includes/
+
+/index.php
+/license.txt
+/readme.html
+/wp-activate.php
+/wp-blog-header.php
+/wp-comments-post.php
+/wp-config-sample.php
+/wp-cron.php
+/wp-links-opml.php
+/wp-load.php
+/wp-login.php
+/wp-mail.php
+/wp-settings.php
+/wp-signup.php
+/wp-trackback.php
+/xmlrpc.php
+
+# Local server rules
+/.htaccess
+
+# Verification / Search Console HTML tokens
+/google*.html
+
+# ------------------------------------------------------------------------------
+# 2. Sensitive Configurations & Credentials
+# ------------------------------------------------------------------------------
+/wp-config.php
+.env
+.env.*
+
+# ------------------------------------------------------------------------------
+# 3. Media Uploads & User Content (Never commit to Git)
+# ------------------------------------------------------------------------------
+/wp-content/uploads/
+/wp-content/blogs.dir/
+
+# ------------------------------------------------------------------------------
+# 4. Large Backups, Dumps & Migration Archives
+# ------------------------------------------------------------------------------
+/wp-content/ai1wm-backups/
+/wp-content/backups/
+*.wpress
+*.sql
+*.sql.gz
+*.tar
+*.tar.gz
+*.zip
+*.bak
+
+# ------------------------------------------------------------------------------
+# 5. Caches, Transients, Upgrades & Logs
+# ------------------------------------------------------------------------------
+/wp-content/cache/
+/wp-content/upgrade/
+/wp-content/upgrade-temp-backup/
+/wp-content/wflogs/
+/wp-content/debug.log
+*.log
+
+# ------------------------------------------------------------------------------
+# 6. OS & IDE System Files
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.sublime-project
+*.sublime-workspace
+.idea/
+.vscode/
+*.swp
+*~
